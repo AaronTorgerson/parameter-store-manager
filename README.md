@@ -2,7 +2,7 @@ AWS SSM ParameterStore Manager
 =========================
 Automates the process of creating, modifying, and deleting Parameter Store parameters.
 
-Example: `./param-manager edit test www`
+Example: `./param-manage edit test www`
 
 Opens a YAML representation of your Parameter Store values in `vim` or the editor of your choice (`$EDITOR` environment variable). Changes to the file will be synced to AWS ParameterStore.
 

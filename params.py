@@ -1,0 +1,179 @@
+from __future__ import print_function, absolute_import
+import botocore.exceptions
+import boto3, click
+import sys, tempfile, os, yaml
+from subprocess import call
+
+EDITOR = os.environ.get('EDITOR','vim')
+EDIT_INSTRUCTIONS = """
+# Edit this file in place. Be sure maintain well-formatted YAML Syntax!
+# Settings must be defined using the following structure:
+# 
+#     PARAMETER_NAME:
+#         type: <String or SecureString>
+#         value: <value of parameter>
+#
+# Adding and removing Parameters will cause them to be added and removed accordingly on ParameterStore. Renaming a parameter will cause the Parameter with the old name to be deleted, and the one with the new name to be created. 
+# Be careful!
+# ======================================================================
+#
+# Parameters for path: {}
+"""
+    
+ssm = boto3.client('ssm')
+kms = boto3.client('kms')
+
+
+@click.group()
+def cli():
+    pass
+
+
+@cli.command()
+@click.argument('environment')
+@click.argument('application')
+def edit(environment, application):
+    """
+    Edit the parameters for the given Environment and Application using `vim`
+    """
+    kms_key_arn = _get_kms_key_arn(environment, application)
+    param_path = "/{}/{}".format(environment.lower(), application.lower())
+    params = _get_parameters(param_path)
+
+    edited_params = _edit_parameters(params, param_path)
+
+    _save_changes(params, edited_params, param_path, kms_key_arn)
+
+
+@cli.command()
+@click.argument('environment')
+@click.argument('application')
+def read(environment, application):
+    """
+    Read the parameters for the given Environment and Application using `less`
+    """
+
+    pass
+
+
+def _get_kms_key_arn(environment, application):
+    # TODO: make sure we can get more than 1000
+    candidates = []
+    keys_resp = kms.list_keys(Limit=1000)
+
+    for key in keys_resp['Keys']:
+        try:
+            tags_resp = kms.list_resource_tags(KeyId=key['KeyId'])
+        except botocore.exceptions.ClientError as err:
+            if "AccessDeniedException" in err.message:
+                continue
+            else:
+                raise
+    
+        env_match = False
+        app_match = False
+        for tag in tags_resp['Tags']:
+            if not env_match and tag['TagKey'].lower() == 'environment':
+                env_match = tag['TagValue'].lower() == environment.lower()
+            if not app_match and tag['TagKey'].lower() == 'application':
+                app_match = tag['TagValue'].lower() == application.lower()
+
+        if env_match and app_match:
+            candidates.append(key)
+
+    if len(candidates) == 0:
+        raise click.ClickException(
+            "No accessible KMS Master Key found tagged with "
+            "Environment:{} and Application:{}!".format(environment, application)
+        )
+    elif len(candidates) > 1:
+        raise click.ClickException(
+            "Multiple KMS Master Keys found tagged with "
+            "Environment:{} and Application:{}!".format(environment, application)
+        )
+    else:
+        return candidates[0]['KeyArn']
+                
+def _get_parameters(path):
+    # we must retrieve the parameters in batches because the API won't return more than
+    # 10 at a time (and we don't know how many there are).
+    values = {}
+    next_token = None
+    while True:
+        # pass NextToken in kwargs because boto will get mad if you pass None.
+        kwargs = {} if next_token is None else {'NextToken': next_token}
+        params_resp = ssm.get_parameters_by_path(Path=path, WithDecryption=True, **kwargs)
+
+        for p in params_resp['Parameters']:
+            values[p['Name'].split('/')[-1]] = {
+                'type': p['Type'], 
+                'value': p['Value']
+            }
+
+        next_token = params_resp.get('NextToken')
+        if next_token is None:
+            break
+    
+    return values
+
+
+def _edit_parameters(params, path):
+    # Write the parameter values out to a file for editing
+    with tempfile.NamedTemporaryFile(mode='w+', suffix=".yaml") as tf:
+        tf.write(EDIT_INSTRUCTIONS.strip().format(path))
+        tf.write('\n\n')
+        yaml_text = yaml.safe_dump(params, tf, default_flow_style = False)
+        tf.flush()
+
+        # call up the editor
+        return_code = call([EDITOR, tf.name])
+
+        if return_code != 0:
+            print("Editor returned a non-zero return code. No changes will be made!")
+            return 1
+
+        with open(tf.name, 'r') as edited_tf:
+            return yaml.load(edited_tf)
+
+
+def _save_changes(orig_params, edited_params, path, kms_key_arn):
+    mod_cnt = 0
+    for key, spec in edited_params.items():
+        if key not in orig_params:
+            print("Creating {} ({})...".format(key, spec['type']))
+            _put_parameter(path, key, spec, kms_key_arn)
+            mod_cnt += 1
+        else:
+            orig_spec = orig_params[key]
+            if orig_spec['type'] != spec['type'] or orig_spec['value'] != spec['value']:
+                print("Updating {} ({})...".format(key, spec['type']))
+                _put_parameter(path, key, spec, kms_key_arn)
+                mod_cnt += 1
+    
+    for key, spec in orig_params.items():
+        if key not in edited_params:
+            print("Deleting ", key)
+            ssm.delete_parameter(Name=os.path.join(path, key))
+            mod_cnt += 1
+
+    if mod_cnt == 0:
+        print("No changes made. Exiting.")
+    else:
+        print("Done!")
+
+def _put_parameter(path, key, spec, kms_key_arn):
+    put_kwargs = {
+        'Name': os.path.join(path, key), 
+        'Value': spec['value'],
+        'Type': spec['type'],
+        'Overwrite': True
+    }
+
+    if spec['type'] == 'SecureString':
+        put_kwargs['KeyId'] = kms_key_arn
+
+    ssm.put_parameter(**put_kwargs)
+
+
+if __name__ == '__main__':
+    cli()

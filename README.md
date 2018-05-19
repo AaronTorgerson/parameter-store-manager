@@ -8,9 +8,10 @@ Opens a YAML representation of your Parameter Store values in `vim` or the edito
 
 Constraints & Assumptions
 -------------------------
-- Parameters names are pathed by Environment and Application. e.g. "/test/myapp"
-- KMS keys exist for each referenced Environment and Appliction, and are tagged as such. e.g. "Environment": "test", "Application": "myapp"
-- One KMS key will be used to encrypt values for a particular path. 
+- You are managing Parameters for one or more applications that have one or more environments (test, staging, live). These applications/environments have been granted proper permissions via IAM to access ParameterStore and the KMS keys used to encrypt secure ParameterStore values.
+- Parameter names are pathed by Environment and Application. e.g. "/test/myapp/MY_SETTING"
+- _One_ KMS Master Key exists for each Environment/Appliction combination (the same key can be used for multiple combinations). These keys are tagged as such. e.g. "Environment": "test", "Application": "myapp". 
+- Your AWS User has permission to access these KMS keys as well as their Tags and to manage ParameterStore parameters.
 
 Prerequisites:
 --------------

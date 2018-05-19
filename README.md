@@ -1,6 +1,5 @@
-Parameter Manager
-================
-
+AWS SSM Parameter Manager
+=========================
 Automates the process of creating, modifying, and deleting Parameter Store parameters.
 
 

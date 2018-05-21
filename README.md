@@ -21,9 +21,9 @@ Prerequisites:
 Usage
 -----
 - Clone this repository
+- `pipenv install` to set up the dependencies
 - `pipenv shell` to activate virtual env
-- `./param-manage <environment_name> <application_name>` (Ex, `./param-manage test www`)
+- `./param-manage edit <environment_name> <application_name>` (Ex, `./param-manage test www`)
 - Follow the instructions in the editor for modifying Parameters
-
 
 

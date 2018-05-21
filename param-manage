@@ -92,7 +92,9 @@ def _get_kms_key_arn(environment, application):
     elif len(candidates) > 1:
         raise click.ClickException(
             "Multiple KMS Master Keys found tagged with "
-            "Environment:{} and Application:{}!".format(environment, application)
+            "Environment:{} and Application:{}!\n\n{}".format(
+                environment, application, [key['KeyId'] for key in candidates]
+            )
         )
     else:
         return candidates[0]['KeyArn']

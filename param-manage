@@ -33,18 +33,21 @@ def cli():
 @cli.command()
 @click.argument('environment')
 @click.argument('application')
-def edit(environment, application):
+@click.option('--path', default=None, help='The path prefix of the Parameter Store parameter key. (e.g. /dev/sma)')
+def edit(environment, application, path):
     """
     Edit the parameters for the given Environment and Application using vim or the editor of your choice.
 
     Set the $EDITOR environment variable to change to the editor of your choice. (e.g. EDITOR=nano)
     """
     kms_key_arn = _get_kms_key_arn(environment, application)
-    param_path = "/{}/{}".format(environment.lower(), application.lower())
+    if path is not None:
+        param_path = path
+    else:
+        param_path = "/{}/{}".format(environment.lower(), application.lower())
+
     params = _get_parameters(param_path)
-
     edited_params = _edit_parameters(params, param_path)
-
     _save_changes(params, edited_params, param_path, kms_key_arn)
 
 
